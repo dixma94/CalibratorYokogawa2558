@@ -116,6 +116,7 @@ namespace Yokogawa2558
 
                 }
                 
+
                 catch (Exception ex)
                 {
                     Reset();
