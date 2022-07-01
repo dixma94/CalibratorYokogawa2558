@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ComponentModel.Composition" Version="6.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Facility">
+      <HintPath>..\..\..\..\Downloads\Telegram Desktop\Facility.dll</HintPath>
+    </Reference>
+    <Reference Include="Ivi.Visa">
+      <HintPath>..\..\..\..\Downloads\Telegram Desktop\CalibratorFluke6100A\CalibratorFluke6100A\bin\Debug\Ivi.Visa.dll</HintPath>
+    </Reference>
+    <Reference Include="Keysight.Visa">
+      <HintPath>..\..\..\..\Downloads\Telegram Desktop\CalibratorFluke6100A\CalibratorFluke6100A\bin\Debug\Keysight.Visa.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
