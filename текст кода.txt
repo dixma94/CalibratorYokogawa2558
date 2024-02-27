@@ -1,0 +1,306 @@
+#region сборка CalibratorYokogawa2558, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+// D:\IvanovD\Downloads\Telegram Desktop\CalibratorYokogawa2558 (2)\net6.0\CalibratorYokogawa2558.dll
+// Decompiled with ICSharpCode.Decompiler 7.1.0.6543
+#endregion
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO.Ports;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using Facility;
+using Ivi.Visa;
+using Keysight.Visa;
+
+namespace Yokogawa2558
+{
+    public class CalibratorYokogawa2558
+    {
+        [FacilityMetadata(Denotation = "Калибратор", SupportedDevices = "Yokogawa 2558", Interfaces = "GPIB", IsCalibrator = true, Version = 1)]
+        public class Yokogawa2558 : global::Facility.Facility
+        {
+            private GpibSession session;
+
+            public override bool Open(byte address, SerialPort serialPort = null)
+            {
+                ResourceManager resourceManager = new ResourceManager();
+                DefaultInterpolatedStringHandler defaultInterpolatedStringHandler = new DefaultInterpolatedStringHandler(13, 2);
+                defaultInterpolatedStringHandler.AppendLiteral("GPIB");
+                defaultInterpolatedStringHandler.AppendFormatted((int)address / 32);
+                defaultInterpolatedStringHandler.AppendLiteral("::");
+                defaultInterpolatedStringHandler.AppendFormatted((int)address % 32);
+                defaultInterpolatedStringHandler.AppendLiteral("::INSTR");
+                session = resourceManager.Open(defaultInterpolatedStringHandler.ToStringAndClear()) as GpibSession;
+                if (session != null)
+                {
+                    session.Clear();
+                    session.TerminationCharacterEnabled = true;
+                    _calibrator = new CalibratorYokogawa(session);
+                    return true;
+                }
+
+                return false;
+            }
+
+            public override void Close()
+            {
+                if (base.Calibrator != null)
+                {
+                    session.Dispose();
+                    _calibrator = null;
+                }
+            }
+        }
+
+        public class CalibratorYokogawa : Calibrator
+        {
+            private GpibSession session;
+
+            private double OldRangeCurrent;
+
+            private double OldRangeVoltage;
+
+            private double OldValueFrequency;
+
+            private bool IsOutputOn;
+
+            private Dictionary<double, string> AcceptableFrequency = new Dictionary<double, string>();
+
+            private Dictionary<double, int[]> VoltageRange = new Dictionary<double, int[]>();
+
+            private Dictionary<double, int[]> CurrentRange = new Dictionary<double, int[]>();
+
+            public CalibratorYokogawa(GpibSession session)
+            {
+                this.session = session;
+                Reset();
+                AcceptableFrequency[50.0] = "F0";
+                AcceptableFrequency[60.0] = "F1";
+                AcceptableFrequency[400.0] = "F2";
+                VoltageRange[0.1] = new int[2] { 1, 100000 };
+                VoltageRange[1.0] = new int[2] { 2, 10000 };
+                VoltageRange[10.0] = new int[2] { 3, 1000 };
+                VoltageRange[100.0] = new int[2] { 4, 100 };
+                VoltageRange[300.0] = new int[2] { 5, 10 };
+                VoltageRange[1000.0] = new int[2] { 6, 10 };
+                CurrentRange[0.1] = new int[2] { 1, 100000 };
+                CurrentRange[1.0] = new int[2] { 2, 10000 };
+                CurrentRange[10.0] = new int[2] { 3, 1000 };
+                CurrentRange[50.0] = new int[2] { 4, 100 };
+            }
+
+            public override bool SetACVoltage(double value)
+            {
+                return SetACVoltage(value, null);
+            }
+
+            public override bool SetACVoltage(double value, int? channel = null)
+            {
+                base.Busy = true;
+                try
+                {
+                    if (value > 1200.0)
+                    {
+                        throw new Exception("Установленное значение напряжения выходит за пределы допустимого диапазона!");
+                    }
+
+                    KeyValuePair<double, int[]> keyValuePair = VoltageRange.FirstOrDefault<KeyValuePair<double, int[]>>((KeyValuePair<double, int[]> rang) => value <= rang.Key);
+                    if (channel.HasValue)
+                    {
+                        OutputOff();
+                    }
+                    else
+                    {
+                        if (OldRangeVoltage != keyValuePair.Key)
+                        {
+                            if (IsOutputOn)
+                            {
+                                OutputOff();
+                            }
+
+                            OldRangeVoltage = keyValuePair.Key;
+                        }
+
+                        int value2 = keyValuePair.Value[0];
+                        string value3 = (value * (double)keyValuePair.Value[1]).ToString("00000", new CultureInfo("EN"));
+                        IMessageBasedFormattedIO formattedIO = session.FormattedIO;
+                        DefaultInterpolatedStringHandler defaultInterpolatedStringHandler = new DefaultInterpolatedStringHandler(2, 2);
+                        defaultInterpolatedStringHandler.AppendLiteral("V");
+                        defaultInterpolatedStringHandler.AppendFormatted(value2);
+                        defaultInterpolatedStringHandler.AppendLiteral("S");
+                        defaultInterpolatedStringHandler.AppendFormatted(value3);
+                        formattedIO.WriteLine(defaultInterpolatedStringHandler.ToStringAndClear());
+                        session.AssertTrigger();
+                        if (IsOutputOn.Equals(obj: false))
+                        {
+                            OutputOn();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Reset();
+                    throw ex;
+                }
+
+                base.Busy = false;
+                return true;
+            }
+
+            public override bool SetACCurrent(double value)
+            {
+                return SetACCurrent(value, null, null);
+            }
+
+            public override bool SetACCurrent(double value, double? angle = null, int? channel = null)
+            {
+                base.Busy = true;
+                try
+                {
+                    if (channel.HasValue)
+                    {
+                        OutputOff();
+                    }
+                    else
+                    {
+                        if (value > 60.0)
+                        {
+                            throw new Exception("Установленное значение тока выходит за пределы допустимого диапазона!");
+                        }
+
+                        KeyValuePair<double, int[]> keyValuePair = CurrentRange.FirstOrDefault<KeyValuePair<double, int[]>>((KeyValuePair<double, int[]> rang) => value <= rang.Key);
+                        if (OldRangeCurrent != keyValuePair.Key)
+                        {
+                            if (IsOutputOn)
+                            {
+                                OutputOff();
+                            }
+
+                            OldRangeCurrent = keyValuePair.Key;
+                        }
+
+                        int value2 = keyValuePair.Value[0];
+                        string value3 = (value * (double)keyValuePair.Value[1]).ToString("00000", new CultureInfo("EN"));
+                        IMessageBasedFormattedIO formattedIO = session.FormattedIO;
+                        DefaultInterpolatedStringHandler defaultInterpolatedStringHandler = new DefaultInterpolatedStringHandler(2, 2);
+                        defaultInterpolatedStringHandler.AppendLiteral("A");
+                        defaultInterpolatedStringHandler.AppendFormatted(value2);
+                        defaultInterpolatedStringHandler.AppendLiteral("S");
+                        defaultInterpolatedStringHandler.AppendFormatted(value3);
+                        formattedIO.WriteLine(defaultInterpolatedStringHandler.ToStringAndClear());
+                        session.AssertTrigger();
+                        if (IsOutputOn.Equals(obj: false))
+                        {
+                            OutputOn();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Reset();
+                    throw ex;
+                }
+
+                base.Busy = false;
+                return true;
+            }
+
+            public override bool SetFrequency(double value)
+            {
+                base.Busy = true;
+                try
+                {
+                    if (!AcceptableFrequency.ContainsKey(value))
+                    {
+                        throw new Exception("Недопустимое значение частоты. Допускаемые:50Гц, 60Гц, 400Гц");
+                    }
+
+                    if (value != OldValueFrequency)
+                    {
+                        if (IsOutputOn)
+                        {
+                            OutputOff();
+                        }
+
+                        session.FormattedIO.WriteLine(AcceptableFrequency[value]);
+                        session.AssertTrigger();
+                        OldValueFrequency = value;
+                        OutputOn();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Reset();
+                    throw ex;
+                }
+
+                base.Busy = false;
+                return true;
+            }
+
+            private void OutputOff()
+            {
+                session.FormattedIO.WriteLine("O0");
+                session.AssertTrigger();
+                IsOutputOn = false;
+            }
+
+            private void OutputOn()
+            {
+                session.FormattedIO.WriteLine("O1");
+                session.AssertTrigger();
+                IsOutputOn = true;
+            }
+
+            public void Reset()
+            {
+                try
+                {
+                    OldRangeVoltage = 0.1;
+                    OldRangeCurrent = 0.0;
+                    OldValueFrequency = 50.0;
+                    IsOutputOn = false;
+                    session.Clear();
+                    session.FormattedIO.Write("F0V1O0");
+                    session.AssertTrigger();
+                    base.Busy = false;
+                }
+                catch (Exception ex)
+                {
+                    throw ex;
+                }
+            }
+        }
+    }
+}
+#if false // Журнал декомпиляции
+Элементов в кэше: "188"
+------------------
+Разрешить: "System.Runtime, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+Найдена одна сборка: "System.Runtime, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+Загрузить из: "C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\6.0.16\ref\net6.0\System.Runtime.dll"
+------------------
+Разрешить: "Facility, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+Найдена одна сборка: "Facility, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+Загрузить из: "X:\Plugins\CalibratorAdvantestR6161\Facility.dll"
+------------------
+Разрешить: "Keysight.Visa, Version=18.1.0.0, Culture=neutral, PublicKeyToken=7a01cdb2a9131f73"
+Найдена одна сборка: "Keysight.Visa, Version=18.1.0.0, Culture=neutral, PublicKeyToken=7a01cdb2a9131f73"
+Загрузить из: "X:\Plugins\CalibratorAdvantestR6161\Keysight.Visa.dll"
+------------------
+Разрешить: "System.IO.Ports, Version=6.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51"
+Не удалось найти по имени: "System.IO.Ports, Version=6.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51"
+------------------
+Разрешить: "System.Collections, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+Найдена одна сборка: "System.Collections, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+Загрузить из: "C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\6.0.16\ref\net6.0\System.Collections.dll"
+------------------
+Разрешить: "Ivi.Visa, Version=5.8.0.0, Culture=neutral, PublicKeyToken=a128c98f1d7717c1"
+Найдена одна сборка: "Ivi.Visa, Version=5.8.0.0, Culture=neutral, PublicKeyToken=a128c98f1d7717c1"
+Загрузить из: "X:\Plugins\CalibratorAdvantestR6161\Ivi.Visa.dll"
+------------------
+Разрешить: "System.Linq, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+Найдена одна сборка: "System.Linq, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+Загрузить из: "C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\6.0.16\ref\net6.0\System.Linq.dll"
+#endif
